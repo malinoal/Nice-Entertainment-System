@@ -5,6 +5,10 @@
 
 #define CPU_DEBUG 1
 
+#if CPU_DEBUG
+	int d_totalInstructions = 0;
+#endif
+
 
 void NES_CPU::init(NES_ROM* _rom) {
 	memory = new uint8_t[0x10000]();
@@ -77,6 +81,9 @@ void NES_CPU::retrievePCfromStack() {
 #endif
 }
 
+inline void NES_CPU::pushToStack(uint8_t value) { memory[--SP] = value; }
+inline uint8_t NES_CPU::pullFromStack() { return memory[SP++]; }
+
 
 
 uint8_t NES_CPU::AND() { //performs & on A, setting Zero and Negative when Appropriate
@@ -142,12 +149,12 @@ uint8_t NES_CPU::ASL() { //Shifts target one bit to the left, places bit 7 in th
 	return cycles;
 }
 
-uint8_t NES_CPU::BEQ() { //branches if the Zero Flag is Set, interpreting the offset as a signed bytes
+uint8_t NES_CPU::BENQ(bool value) { //branches if the Zero Flag is Set to value, interpreting the offset as a signed bytes
 	uint8_t cycles = 2;
 
 	PC += 2;
 
-	if(isSetZeroFlag()) {
+	if(isSetZeroFlag()==value) {
 		cycles++; //TODO: increment cycles once more if on a new page
 		uint8_t offset = memory[PC-1];
 		if(isBitSet(offset, 7)) {
@@ -159,11 +166,57 @@ uint8_t NES_CPU::BEQ() { //branches if the Zero Flag is Set, interpreting the of
 	return cycles;
 }
 
-uint8_t NES_CPU::BRK() { //Pushes PC to stack and loads address at 0xfffe/f, and sets BRK Flag in P
+uint8_t NES_CPU::BIT() {
+	/*
+	 * A & target in memory (does NOT change A)
+	 * Sets Zero if the result is 0
+	 * Sets Overflow to bit 6 of the memory value
+	 * Sets Negative to bit 7 of the memory value
+	 */
+	uint8_t bytes = 0;
+	uint8_t cycles = 0;
+	uint8_t target = 0;
+
+	switch(memory[PC]) {
+
+	case 0x2c:
+		bytes = 3;
+		cycles = 4;
+		target = memory[combineLowHigh(memory[PC+1], memory[PC+2])];
+		break;
+
+	case 0x24:
+		bytes = 2;
+		cycles = 3;
+		target = memory[memory[PC+1]];
+		break;
+
+	default:
+		printf("BIT code %02x not implemented yet\n", memory[PC]);
+		return 0;
+	}
+
+	uint8_t result = A & target;
+	setZeroFlag(result == 0);
+	setOverflow(isBitSet(target, 6));
+	setNegative(isBitSet(target, 7));
+
+	PC += bytes;
+	return cycles;
+}
+
+uint8_t NES_CPU::BRK() {
+	/*
+	 * First pushes PC+2 to stack, then P
+	 * Loads Interrupt Vector from 0xfffe/f into PC
+	 * sets BRK
+	 */
 
 	PC += 2;
 
 	pushPCtoStack();
+
+	pushToStack(P);
 
 #if CPU_DEBUG
 		printf("Doing BRK, PC before was %04x\n", PC);
@@ -186,6 +239,56 @@ uint8_t NES_CPU::BRK() { //Pushes PC to stack and loads address at 0xfffe/f, and
 	return 7;
 }
 
+uint8_t NES_CPU::BVC() { //Branch if overflow clear
+
+	if(!isSetOverflow()) {
+		uint8_t offset = memory[PC+1];
+		if(isBitSet(offset, 7)) {
+			offset = offset & 0b01111111;
+			PC -= offset;
+		} else PC += offset;
+		PC += 2;
+		return 3; //TODO: +2 if new page
+	} else {
+		PC+=2;
+		return 2;
+	}
+
+}
+
+uint8_t NES_CPU::CMP() {
+	/*
+	 * Compares A to target
+	 * Sets Carry to A>=target
+	 * Sets Zero to A==target
+	 * Sets Negative if bit 7 of target is set
+	 */
+	uint8_t bytes = 0;
+	uint8_t cycles = 0;
+	uint8_t target = 0;
+
+	switch(memory[PC]) {
+
+	case 0xc9:
+		bytes = 2;
+		cycles = 2;
+		target = memory[PC+1];
+		break;
+
+	default:
+		printf("CMP code %02x not implemented yet\n", memory[PC]);
+		return 0;
+	}
+
+	setCarryFlag(A>=target);
+	setZeroFlag(A==target);
+	setNegative(isBitSet(target, 7));
+
+	PC += bytes;
+	return cycles;
+
+}
+
 uint8_t NES_CPU::INZ(uint8_t* Z) { //Increments X, Y or a location in memory, setting Zero and Negative when appropriate
 	uint8_t bytes = 0;
 	uint8_t cycles = 0;
@@ -195,6 +298,11 @@ uint8_t NES_CPU::INZ(uint8_t* Z) { //Increments X, Y or a location in memory, se
 	case 0xe8:
 		bytes = 1;
 		cycles = 2;
+		break;
+
+	case 0xf6:
+		bytes = 2;
+		cycles = 6;
 		break;
 
 	default:
@@ -280,6 +388,8 @@ uint8_t NES_CPU::LSR() {
 
 }
 
+inline uint8_t NES_CPU::RTI() { P = pullFromStack(); retrievePCfromStack(); return 6; }
+
 uint8_t NES_CPU::SBC() {
 	/*
 	 * A-M-(1-C)
@@ -296,9 +406,29 @@ uint8_t NES_CPU::SBC() {
 	switch(memory[PC]) {
 
 	case 0xe9:
+	case 0xeb: //Unofficial opcode
 		bytes = 2;
 		cycles = 2;
 		target = memory[PC+1];
+		break;
+
+	case 0xed:
+		bytes = 3;
+		cycles = 4;
+		target = memory[combineLowHigh(memory[PC+1], memory[PC+2])];
+		break;
+
+	case 0xf1:
+		bytes = 2;
+		cycles = 5; //TODO:Increase cycles if page is crossed
+		{uint16_t addr = memory[PC+1] + Y;
+		target = memory[combineLowHigh(memory[addr], memory[addr+1])];}
+		break;
+
+	case 0xf9:
+		bytes = 3;
+		cycles = 4; //TODO:Increase cycles if page crossed
+		target= memory[combineLowHigh(memory[PC+1], memory[PC+2]) + Y];
 		break;
 
 	default:
@@ -353,10 +483,21 @@ uint8_t NES_CPU::STA() { //Stores accumulator into memory
 
 
 uint8_t NES_CPU::runOp() {
+
+#if CPU_DEBUG
+	printf("Executing %02x %02x, Instruction no. %i\n", memory[PC], memory[PC+1], d_totalInstructions++);
+#endif
+
 	switch(memory[PC]) {
 
 	case 0x00:
 		return BRK();
+		break;
+
+	case 0x08:
+		pushToStack(P);
+		PC++;
+		return 3;
 		break;
 
 	case 0x0a:
@@ -365,6 +506,26 @@ uint8_t NES_CPU::runOp() {
 		case 0x0e:
 		case 0x1e:
 			return ASL();
+			break;
+
+	case 0x14: //IGN - Unofficial, reads from an address and ignores it, TODO: Possible side effects of this
+		case 0x34:
+		case 0x54:
+		case 0x74:
+		case 0xd4:
+		case 0xf4:
+			PC += 2;
+			return 4;
+			break;
+
+	case 0x1c: //IGN with absolute addressing, not sure about cycle count
+		case 0x3c:
+		case 0x5c:
+		case 0x7c:
+		case 0xdc:
+		case 0xfc:
+			PC += 3;
+			return 4; //maybe 5?
 			break;
 
 	case 0x1a:
@@ -378,6 +539,10 @@ uint8_t NES_CPU::runOp() {
 			return 2; //NOP
 			break;
 
+	case 0x24:
+		case 0x2c:
+			return BIT();
+
 	case 0x29:
 		case 0x25:
 		case 0x35:
@@ -388,12 +553,19 @@ uint8_t NES_CPU::runOp() {
 		case 0x31:
 			return AND();
 
+	case 0x40:
+		return RTI();
+
 	case 0x4a:
 		case 0x46:
 		case 0x56:
 		case 0x4e:
 		case 0x5e:
 			return LSR();
+
+	case 0x50:
+		return BVC();
+		break;
 
 	case 0x78:
 		setInterruptDisable(1);
@@ -435,6 +607,21 @@ uint8_t NES_CPU::runOp() {
 			return LDZ(&A);
 			break;
 
+
+	case 0xc9:
+		case 0xc5:
+		case 0xd5:
+		case 0xcd:
+		case 0xdd:
+		case 0xd9:
+		case 0xc1:
+		case 0xd1:
+			return CMP();
+			break;
+
+	case 0xd0:
+		return BENQ(false);
+
 	case 0xd8:
 		setDecimalMode(0);
 		PC+=1;
@@ -445,6 +632,7 @@ uint8_t NES_CPU::runOp() {
 		return INZ(&X);
 
 	case 0xe9:
+		case 0xeb:
 		case 0xe5:
 		case 0xf5:
 		case 0xed:
@@ -455,7 +643,17 @@ uint8_t NES_CPU::runOp() {
 			return SBC();
 
 	case 0xf0:
-		return BEQ();
+		return BENQ(true);
+		break;
+
+	case 0xf6:
+		return INZ(&memory[(uint8_t) (memory[PC+1] + X)]);
+		break;
+
+	case 0xf8:
+		setDecimalMode(1);
+		PC++;
+		return 2;
 		break;
 
 

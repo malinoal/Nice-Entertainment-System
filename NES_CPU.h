@@ -23,21 +23,33 @@ public:
 
 	void retrievePCfromStack();
 
+	inline void pushToStack(uint8_t value);
+
+	inline uint8_t pullFromStack();
+
 	uint8_t runOp();
 
 	uint8_t AND();
 
 	uint8_t ASL();
 
-	uint8_t BEQ();
+	uint8_t BENQ(bool value);
+
+	uint8_t BIT();
 
 	uint8_t BRK();
+
+	uint8_t BVC();
+
+	uint8_t CMP();
 
 	uint8_t INZ(uint8_t* Z);
 
 	uint8_t LDZ(uint8_t* Z);
 
 	uint8_t LSR();
+
+	inline uint8_t RTI();
 
 	uint8_t SBC();
 
