@@ -93,10 +93,52 @@ uint8_t NES_CPU::AND() { //performs & on A, setting Zero and Negative when Appro
 
 	switch(memory[PC]) {
 
+	case 0x21:
+		bytes = 2;
+		cycles = 6;
+		target = getIndirectXValue();
+		break;
+
+	case 0x25:
+		bytes = 2;
+		cycles = 3;
+		target = getZeroPageValue();
+		break;
+
 	case 0x29:
 		bytes = 2;
 		cycles = 2;
-		target = memory[PC+1];
+		target = getImmediateValue();
+		break;
+
+	case 0x2d:
+		bytes = 3;
+		cycles = 4;
+		target = getAbsoluteValue();
+		break;
+
+	case 0x31:
+		bytes = 2;
+		cycles = 5; //TODO: +1 if page crossed
+		target = getIndirectYValue();
+		break;
+
+	case 0x35:
+		bytes = 2;
+		cycles = 4;
+		target = getZeroPageXValue();
+		break;
+
+	case 0x39:
+		bytes = 3;
+		cycles = 4; //TODO: +1 if page crossed
+		target = getAbsoluteYValue();
+		break;
+
+	case 0x3d:
+		bytes = 3;
+		cycles = 4; //TODO: +1 if page crossed
+		target = getAbsoluteXValue();
 		break;
 
 	default:
@@ -182,17 +224,17 @@ uint8_t NES_CPU::BIT() {
 	case 0x2c:
 		bytes = 3;
 		cycles = 4;
-		target = memory[combineLowHigh(memory[PC+1], memory[PC+2])];
+		target = getAbsoluteValue();
 		break;
 
 	case 0x24:
 		bytes = 2;
 		cycles = 3;
-		target = memory[memory[PC+1]];
+		target = getZeroPageValue();
 		break;
 
 	default:
-		printf("BIT code %02x not implemented yet\n", memory[PC]);
+		printf("BIT code %02x does not exist\n", memory[PC]);
 		return 0;
 	}
 
@@ -203,6 +245,24 @@ uint8_t NES_CPU::BIT() {
 
 	PC += bytes;
 	return cycles;
+}
+
+uint8_t NES_CPU::BIZ(bool zeroSet) { //Branch if Zero, implements both BPL and BMI
+	bool branching = isSetZeroFlag() == zeroSet;
+
+	if(branching) {
+		uint8_t offset = memory[PC+1];
+		if(isBitSet(offset, 7)) {
+			offset = offset & 0b01111111;
+			PC -= offset;
+		} else PC += offset;
+		PC += 2;
+		return 3; //TODO: +2 if new page
+	} else {
+		PC += 2;
+		return 2;
+	}
+
 }
 
 uint8_t NES_CPU::BRK() {
@@ -256,7 +316,7 @@ uint8_t NES_CPU::BVC() { //Branch if overflow clear
 
 }
 
-uint8_t NES_CPU::CMP() {
+uint8_t NES_CPU::CMP(uint8_t* Z) {
 	/*
 	 * Compares A to target
 	 * Sets Carry to A>=target
@@ -269,10 +329,58 @@ uint8_t NES_CPU::CMP() {
 
 	switch(memory[PC]) {
 
+	case 0xc1:
+		bytes = 2;
+		cycles = 6;
+		target =getIndirectXValue();
+		break;
+
+	case 0xc5:
+	case 0xe4:
+	case 0xc4:
+		bytes = 2;
+		cycles = 3;
+		target = getZeroPageValue();
+		break;
+
 	case 0xc9:
+	case 0xe0:
+	case 0xc0:
 		bytes = 2;
 		cycles = 2;
-		target = memory[PC+1];
+		target = getImmediateValue();
+		break;
+
+	case 0xcd:
+	case 0xec:
+	case 0xcc:
+		bytes = 3;
+		cycles = 4;
+		target = getAbsoluteValue();
+		break;
+
+	case 0xd1:
+		bytes = 2;
+		cycles = 5; //TODO: +1 if page crossed
+		target =getIndirectYValue();
+		break;
+
+	case 0xd5:
+		bytes = 2;
+		cycles = 4;
+		target = getZeroPageXValue();
+		break;
+
+	case 0xd9:
+		bytes = 3;
+		cycles = 4; //TODO: +1 if page crossed
+		target = getAbsoluteYValue();
+		break;
+
+	case 0xdd:
+		bytes = 3;
+		cycles = 4; //TODO: +1 if page crossed
+		target = getAbsoluteXValue();
 		break;
 
 	default:
@@ -280,13 +388,38 @@ uint8_t NES_CPU::CMP() {
 		return 0;
 	}
 
-	setCarryFlag(A>=target);
-	setZeroFlag(A==target);
+	setCarryFlag((*Z)>=target);
+	setZeroFlag((*Z)==target);
 	setNegative(isBitSet(target, 7));
 
 	PC += bytes;
 	return cycles;
 
+}
+
+uint8_t NES_CPU::DEZ(uint8_t* Z) { //Decrements Z, setting Zero and Negative when appropriate
+	uint8_t bytes = 0;
+	uint8_t cycles = 0;
+
+	switch(memory[PC]) {
+
+	case 0xce:
+		bytes = 3;
+		cycles = 6;
+		break;
+
+	default:
+		printf("DEZZ code %02x not implemented yet\n", memory[PC]);
+		return 0;
+	}
+
+
+	(*Z)--;
+	setZeroFlag(*Z==0);
+	setNegative(isBitSet(*Z, 7));
+
+	PC += bytes;
+	return cycles;
 }
 
 uint8_t NES_CPU::INZ(uint8_t* Z) { //Increments X, Y or a location in memory, setting Zero and Negative when appropriate
@@ -325,21 +458,71 @@ uint8_t NES_CPU::LDZ(uint8_t* Z) { //loads a byte into A, X or Y, setting Zero a
 
 	switch(memory[PC]) {
 
+	case 0xa1:
+		bytes = 2;
+		cycles = 6;
+		target = getIndirectXValue();
+		break;
+
+	case 0xa5:
+	case 0xa6:
+	case 0xa4:
+		bytes = 2;
+		cycles = 3;
+		target = getZeroPageValue();
+		break;
+
 	case 0xa9: //Immediate addressing mode
 	case 0xa2:
+	case 0xa0:
 		bytes = 2;
 		cycles = 2;
-		target = memory[PC+1];
+		target = getImmediateValue();
 		break;
 
 	case 0xad: //Absolute addressing mode
+	case 0xae:
+	case 0xac:
 		bytes = 3;
 		cycles = 4;
-		target = memory[combineLowHigh(memory[PC+1], memory[PC+2])];
+		target = getAbsoluteValue();
+		break;
+
+	case 0xb1:
+		bytes = 2;
+		cycles = 5; //TODO: +1 if page crossed
+		target = getIndirectYValue();
+		break;
+
+	case 0xb5:
+	case 0xb4:
+		bytes = 2;
+		cycles = 4;
+		target = getZeroPageXValue();
+		break;
+
+	case 0xb6:
+		bytes = 2;
+		cycles = 4;
+		target = getZeroPageYValue();
+		break;
+
+	case 0xb9:
+	case 0xbe:
+		bytes = 3;
+		cycles = 4; //TODO: +1 if page crossed
+		target = getAbsoluteYValue();
+		break;
+
+	case 0xbd:
+	case 0xbc:
+		bytes = 3;
+		cycles = 4; //TODO: +1 if page crossed
+		target = getAbsoluteXValue();
 		break;
 
 	default:
-		printf("LDZ code %02x not implemented yet\n", memory[PC]);
+		printf("LDZ code %02x does not exist\n", memory[PC]);
 		return 0;
 	}
 
@@ -405,30 +588,53 @@ uint8_t NES_CPU::SBC() {
 
 	switch(memory[PC]) {
 
+	case 0xe1:
+		bytes = 2;
+		cycles = 6;
+		target = getIndirectXValue();
+		break;
+
+	case 0xe5:
+		bytes = 2;
+		cycles = 3;
+		target = getZeroPageValue();
+		break;
+
 	case 0xe9:
 	case 0xeb: //Unofficial opcode
 		bytes = 2;
 		cycles = 2;
-		target = memory[PC+1];
+		target = getImmediateValue();
 		break;
 
 	case 0xed:
 		bytes = 3;
 		cycles = 4;
-		target = memory[combineLowHigh(memory[PC+1], memory[PC+2])];
+		target = getAbsoluteValue();
 		break;
 
 	case 0xf1:
 		bytes = 2;
 		cycles = 5; //TODO:Increase cycles if page is crossed
-		{uint16_t addr = memory[PC+1] + Y;
-		target = memory[combineLowHigh(memory[addr], memory[addr+1])];}
+		target = getIndirectYValue();
+		break;
+
+	case 0xf5:
+		bytes = 2;
+		cycles = 4;
+		target = getZeroPageXValue();
 		break;
 
 	case 0xf9:
 		bytes = 3;
 		cycles = 4; //TODO:Increase cycles if page crossed
-		target= memory[combineLowHigh(memory[PC+1], memory[PC+2]) + Y];
+		target= getAbsoluteYValue();
+		break;
+
+	case 0xfd:
+		bytes = 3;
+		cycles = 4; //TODO:Increase cycles if page crossed
+		target= getAbsoluteXValue();
 		break;
 
 	default:
@@ -455,7 +661,7 @@ uint8_t NES_CPU::SBC() {
 
 }
 
-uint8_t NES_CPU::STA() { //Stores accumulator into memory
+uint8_t NES_CPU::STZ(uint8_t Z) { //Stores Z into memory
 	uint8_t bytes = 0;
 	uint8_t cycles = 0;
 	uint16_t target = 0;
@@ -463,19 +669,20 @@ uint8_t NES_CPU::STA() { //Stores accumulator into memory
 	switch(memory[PC]) {
 
 	case 0x8d:
+	case 0x8e:
 		bytes = 3;
 		cycles = 4;
-		target = combineLowHigh(memory[PC+1], memory[PC+2]);
+		target = getAbsoluteValue();
 		break;
 
 
 
 	default:
-		printf("STA code %02x not implemented yet\n", memory[PC]);
+		printf("STZ code %02x not implemented yet\n", memory[PC]);
 		return 0;
 	}
 
-	memory[target] = A;
+	memory[target] = Z;
 	PC += bytes;
 	return cycles;
 
@@ -573,6 +780,12 @@ uint8_t NES_CPU::runOp() {
 		return 2;
 		break;
 
+	case 0x84:
+		case 0x94:
+		case 0x8c:
+			return STZ(Y);
+			break;
+
 	case 0x85:
 		case 0x95:
 		case 0x8d:
@@ -580,7 +793,13 @@ uint8_t NES_CPU::runOp() {
 		case 0x99:
 		case 0x81:
 		case 0x91:
-			return STA();
+			return STZ(A);
+			break;
+
+	case 0x86:
+		case 0x96:
+		case 0x8e:
+			return STZ(X);
 			break;
 
 	case 0x9a:
@@ -607,6 +826,12 @@ uint8_t NES_CPU::runOp() {
 			return LDZ(&A);
 			break;
 
+	case 0xc0:
+		case 0xc4:
+		case 0xcc:
+			return CMP(&Y);
+			break;
+
 
 	case 0xc9:
 		case 0xc5:
@@ -616,8 +841,12 @@ uint8_t NES_CPU::runOp() {
 		case 0xd9:
 		case 0xc1:
 		case 0xd1:
-			return CMP();
+			return CMP(&A);
 			break;
+
+	case 0xce:
+		return DEZ(&memory[combineLowHigh(memory[PC+1], memory[PC+2])]);
+		break;
 
 	case 0xd0:
 		return BENQ(false);
@@ -627,6 +856,11 @@ uint8_t NES_CPU::runOp() {
 		PC+=1;
 		return 2;
 		break;
+
+	case 0xe0:
+		case 0xe4:
+		case 0xec:
+			return CMP(&X);
 
 	case 0xe8:
 		return INZ(&X);
@@ -662,7 +896,7 @@ uint8_t NES_CPU::runOp() {
 	default:
 		printf("Opcode %02x not implemented yet\n", memory[PC]);
 		printf("Found at %04x which should be %04x in the PRG\n", PC, rom->prg_banks <= 1 ? PC-0xC000 : PC-0x8000);
-		printf("Which should be %04x in the ROM\n", rom->prg_banks <= 1 ? PC-0xC000+10 : PC-0x8000+10);
+		printf("Which should be %04x in the ROM\n", rom->prg_banks <= 1 ? PC-0xC000+16 : PC-0x8000+16);
 		return 0;
 	}
 }
@@ -684,6 +918,26 @@ inline bool NES_CPU::isSetDecimalMode() {return isBitSet(P, 3); }
 inline bool NES_CPU::isSetBRK() {return isBitSet(P, 4); }
 inline bool NES_CPU::isSetOverflow() {return isBitSet(P, 6); }
 inline bool NES_CPU::isSetNegative() {return isBitSet(P, 7); }
+
+inline uint8_t NES_CPU::getImmediateValue() {return memory[PC+1]; }
+inline uint8_t NES_CPU::getZeroPageValue() {return memory[memory[PC+1]]; }
+inline uint8_t NES_CPU::getZeroPageXValue() {return memory[memory[PC+1]+X]; }
+inline uint8_t NES_CPU::getZeroPageYValue() {return memory[memory[PC+1]+Y]; }
+inline uint8_t NES_CPU::getAbsoluteValue() {return memory[combineLowHigh(memory[PC+1], memory[PC+2])]; }
+inline uint8_t NES_CPU::getAbsoluteXValue() {return memory[combineLowHigh(memory[PC+1], memory[PC+2])+X]; }
+inline uint8_t NES_CPU::getAbsoluteYValue() {return memory[combineLowHigh(memory[PC+1], memory[PC+2])+Y]; }
+inline uint8_t NES_CPU::getIndirectValue() {
+	uint8_t addr = getAbsoluteValue();
+	return memory[combineLowHigh(memory[addr], memory[addr+1])];
+}
+inline uint8_t NES_CPU::getIndirectXValue() {
+	uint8_t addr = memory[PC+1] + X;
+	return memory[combineLowHigh(memory[addr], memory[addr+1])];
+}
+inline uint8_t NES_CPU::getIndirectYValue() {
+	uint8_t addr = memory[PC+1] + Y;
+	return memory[combineLowHigh(memory[addr], memory[addr+1])];
+}
 
 
 

@@ -37,11 +37,15 @@ public:
 
 	uint8_t BIT();
 
+	uint8_t BIZ(bool zeroSet);
+
 	uint8_t BRK();
 
 	uint8_t BVC();
 
-	uint8_t CMP();
+	uint8_t CMP(uint8_t* Z);
+
+	uint8_t DEZ(uint8_t* Z);
 
 	uint8_t INZ(uint8_t* Z);
 
@@ -53,7 +57,7 @@ public:
 
 	uint8_t SBC();
 
-	uint8_t STA();
+	uint8_t STZ(uint8_t Z);
 
 
 	inline void setCarryFlag(bool value);
@@ -72,6 +76,16 @@ public:
 	inline bool isSetOverflow();
 	inline bool isSetNegative();
 
+	inline uint8_t getImmediateValue();
+	inline uint8_t getZeroPageValue();
+	inline uint8_t getZeroPageXValue();
+	inline uint8_t getZeroPageYValue();
+	inline uint8_t getAbsoluteValue();
+	inline uint8_t getAbsoluteXValue();
+	inline uint8_t getAbsoluteYValue();
+	inline uint8_t getIndirectValue();
+	inline uint8_t getIndirectXValue();
+	inline uint8_t getIndirectYValue();
 
 	void d_printMemFromPC();
 };
