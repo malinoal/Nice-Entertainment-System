@@ -37,11 +37,13 @@ public:
 
 	uint8_t BIT();
 
+	uint8_t BIC(bool carrySet);
+
 	uint8_t BIZ(bool zeroSet);
 
 	uint8_t BRK();
 
-	uint8_t BVC();
+	//uint8_t BVC();
 
 	uint8_t CMP(uint8_t* Z);
 
@@ -49,15 +51,32 @@ public:
 
 	uint8_t INZ(uint8_t* Z);
 
+	uint8_t JMP();
+
+	uint8_t JSR();
+
 	uint8_t LDZ(uint8_t* Z);
 
 	uint8_t LSR();
+
+	uint8_t PLA();
 
 	inline uint8_t RTI();
 
 	uint8_t SBC();
 
 	uint8_t STZ(uint8_t Z);
+
+	uint8_t branchIfFlagSet(bool flag, bool isSet);
+
+	inline uint8_t BCS();
+	inline uint8_t BCC();
+	inline uint8_t BEQ();
+	inline uint8_t BNE();
+	inline uint8_t BMI();
+	inline uint8_t BPL();
+	inline uint8_t BVC();
+	inline uint8_t BVS();
 
 
 	inline void setCarryFlag(bool value);
@@ -81,11 +100,14 @@ public:
 	inline uint8_t getZeroPageXValue();
 	inline uint8_t getZeroPageYValue();
 	inline uint8_t getAbsoluteValue();
+	inline uint16_t getAbsoluteAddress();
 	inline uint8_t getAbsoluteXValue();
 	inline uint8_t getAbsoluteYValue();
 	inline uint8_t getIndirectValue();
 	inline uint8_t getIndirectXValue();
 	inline uint8_t getIndirectYValue();
+
+	inline void branchRelative();
 
 	void d_printMemFromPC();
 };

@@ -5,6 +5,8 @@
 
 #define CPU_DEBUG 1
 
+#define NESTEST 1
+
 #if CPU_DEBUG
 	int d_totalInstructions = 0;
 #endif
@@ -47,7 +49,21 @@ void NES_CPU::init(NES_ROM* _rom) {
 	uint8_t startPClow = memory[PC];
 	uint8_t startPChigh = memory[PC+1];
 
+#if CPU_DEBUG
+		printf("Constructing PC out of %02x and %02x\n", startPClow, startPChigh);
+		printf("Found at %04x which should be %04x in the PRG\n", PC, rom->prg_banks <= 1 ? PC-0xC000 : PC-0x8000);
+		printf("Which should be %04x in the ROM\n", rom->prg_banks <= 1 ? PC-0xC000+16 : PC-0x8000+16);
+#endif
+
 	PC = combineLowHigh(startPClow, startPChigh);
+
+#if NESTEST
+		PC = 0xc000;
+#endif
+
+#if CPU_DEBUG
+		printf("PC is now %04x\n", PC);
+#endif
 
 }
 
@@ -191,22 +207,6 @@ uint8_t NES_CPU::ASL() { //Shifts target one bit to the left, places bit 7 in th
 	return cycles;
 }
 
-uint8_t NES_CPU::BENQ(bool value) { //branches if the Zero Flag is Set to value, interpreting the offset as a signed bytes
-	uint8_t cycles = 2;
-
-	PC += 2;
-
-	if(isSetZeroFlag()==value) {
-		cycles++; //TODO: increment cycles once more if on a new page
-		uint8_t offset = memory[PC-1];
-		if(isBitSet(offset, 7)) {
-			offset = offset & 0b01111111;
-			PC -= offset;
-		} else PC += offset;
-	}
-
-	return cycles;
-}
 
 uint8_t NES_CPU::BIT() {
 	/*
@@ -247,23 +247,6 @@ uint8_t NES_CPU::BIT() {
 	return cycles;
 }
 
-uint8_t NES_CPU::BIZ(bool zeroSet) { //Branch if Zero, implements both BPL and BMI
-	bool branching = isSetZeroFlag() == zeroSet;
-
-	if(branching) {
-		uint8_t offset = memory[PC+1];
-		if(isBitSet(offset, 7)) {
-			offset = offset & 0b01111111;
-			PC -= offset;
-		} else PC += offset;
-		PC += 2;
-		return 3; //TODO: +2 if new page
-	} else {
-		PC += 2;
-		return 2;
-	}
-
-}
 
 uint8_t NES_CPU::BRK() {
 	/*
@@ -299,14 +282,10 @@ uint8_t NES_CPU::BRK() {
 	return 7;
 }
 
-uint8_t NES_CPU::BVC() { //Branch if overflow clear
+/*uint8_t NES_CPU::BVC() { //Branch if overflow clear
 
 	if(!isSetOverflow()) {
-		uint8_t offset = memory[PC+1];
-		if(isBitSet(offset, 7)) {
-			offset = offset & 0b01111111;
-			PC -= offset;
-		} else PC += offset;
+		branchRelative();
 		PC += 2;
 		return 3; //TODO: +2 if new page
 	} else {
@@ -314,7 +293,7 @@ uint8_t NES_CPU::BVC() { //Branch if overflow clear
 		return 2;
 	}
 
-}
+}*/
 
 uint8_t NES_CPU::CMP(uint8_t* Z) {
 	/*
@@ -403,6 +382,11 @@ uint8_t NES_CPU::DEZ(uint8_t* Z) { //Decrements Z, setting Zero and Negative whe
 
 	switch(memory[PC]) {
 
+	case 0xca:
+		bytes = 1;
+		cycles = 2;
+		break;
+
 	case 0xce:
 		bytes = 3;
 		cycles = 6;
@@ -449,6 +433,51 @@ uint8_t NES_CPU::INZ(uint8_t* Z) { //Increments X, Y or a location in memory, se
 
 	PC += bytes;
 	return cycles;
+}
+
+uint8_t NES_CPU::JSR() { //Jump to Subroutine, takes 3 bytes but only pushes PC+2 onto stack
+	uint16_t addr = getAbsoluteAddress();
+	PC += 3; //6502 reference at obelisk says this should only be increased by 2, but in the nestest log it's increased by 3
+	pushPCtoStack();
+	PC = addr;
+
+	return 6;
+
+}
+
+uint8_t NES_CPU::PLA() { //Pulls value from stack into A, setting Zero and Negative as appropriate
+	A = pullFromStack();
+	setZeroFlag(A==0);
+	setNegative(isBitSet(A,7));
+	PC++;
+	return 4;
+}
+
+uint8_t NES_CPU::JMP() { //Jumps to target
+	uint8_t cycles = 0;
+	uint16_t target = 0;
+
+	switch(memory[PC]) {
+
+	case 0x4c:
+		cycles = 3;
+		target = getAbsoluteAddress();
+		break;
+
+	case 0x6c:
+		cycles = 5;
+		target = getIndirectValue(); //TODO: Fix to Indirect Address
+		break;
+
+	default:
+		printf("JMP Code %02x does not exist\n", memory[PC]);
+		return 0;
+	}
+
+	PC = target;
+
+	return cycles;
+
 }
 
 uint8_t NES_CPU::LDZ(uint8_t* Z) { //loads a byte into A, X or Y, setting Zero and Negative Flags when applicable
@@ -668,11 +697,57 @@ uint8_t NES_CPU::STZ(uint8_t Z) { //Stores Z into memory
 
 	switch(memory[PC]) {
 
+	case 0x81:
+		bytes = 2;
+		cycles = 6;
+		target = getIndirectXValue();
+		break;
+
+	case 0x85:
+	case 0x86:
+	case 0x84:
+		bytes = 2;
+		cycles = 3;
+		target = getZeroPageValue();
+		break;
+
 	case 0x8d:
 	case 0x8e:
+	case 0x8c:
 		bytes = 3;
 		cycles = 4;
 		target = getAbsoluteValue();
+		break;
+
+	case 0x91:
+		bytes = 2;
+		cycles = 6;
+		target = getIndirectYValue();
+		break;
+
+	case 0x95:
+	case 0x94:
+		bytes = 2;
+		cycles = 4;
+		target = getZeroPageXValue();
+		break;
+
+	case 0x96:
+		bytes = 2;
+		cycles = 4;
+		target = getZeroPageYValue();
+		break;
+
+	case 0x99:
+		bytes = 3;
+		cycles = 5;
+		target = getAbsoluteYValue();
+		break;
+
+	case 0x9d:
+		bytes = 3;
+		cycles = 5;
+		target = getAbsoluteXValue();
 		break;
 
 
@@ -692,7 +767,7 @@ uint8_t NES_CPU::STZ(uint8_t Z) { //Stores Z into memory
 uint8_t NES_CPU::runOp() {
 
 #if CPU_DEBUG
-	printf("Executing %02x %02x, Instruction no. %i\n", memory[PC], memory[PC+1], d_totalInstructions++);
+	printf("Executing %02x %02x at %04x, Instruction no. %i\n", memory[PC], memory[PC+1], PC,  d_totalInstructions++);
 #endif
 
 	switch(memory[PC]) {
@@ -715,6 +790,9 @@ uint8_t NES_CPU::runOp() {
 			return ASL();
 			break;
 
+	case 0x10:
+		return BPL();
+
 	case 0x14: //IGN - Unofficial, reads from an address and ignores it, TODO: Possible side effects of this
 		case 0x34:
 		case 0x54:
@@ -724,6 +802,11 @@ uint8_t NES_CPU::runOp() {
 			PC += 2;
 			return 4;
 			break;
+
+	case 0x18:
+		setCarryFlag(false);
+		PC++;
+		return 2;
 
 	case 0x1c: //IGN with absolute addressing, not sure about cycle count
 		case 0x3c:
@@ -746,9 +829,17 @@ uint8_t NES_CPU::runOp() {
 			return 2; //NOP
 			break;
 
+	case 0x20:
+		return JSR();
+
 	case 0x24:
 		case 0x2c:
 			return BIT();
+
+	case 0x28:
+		P = pullFromStack();
+		PC++;
+		return 4; //PLP, Pull Processor Status
 
 	case 0x29:
 		case 0x25:
@@ -760,8 +851,21 @@ uint8_t NES_CPU::runOp() {
 		case 0x31:
 			return AND();
 
+	case 0x30:
+		return BMI();
+
+	case 0x38:
+		setCarryFlag(true);
+		PC++;
+		return 2;
+
 	case 0x40:
 		return RTI();
+
+	case 0x48:
+		pushToStack(A);
+		PC++;
+		return 3; //PHA, push A
 
 	case 0x4a:
 		case 0x46:
@@ -770,9 +874,22 @@ uint8_t NES_CPU::runOp() {
 		case 0x5e:
 			return LSR();
 
+	case 0x4c:
+		case 0x6c:
+			return JMP();
+
 	case 0x50:
 		return BVC();
-		break;
+
+	case 0x60:
+		retrievePCfromStack();
+		return 6; //RTS, return from subroutine
+
+	case 0x68:
+		return PLA();
+
+	case 0x70:
+		return BVS();
 
 	case 0x78:
 		setInterruptDisable(1);
@@ -802,6 +919,9 @@ uint8_t NES_CPU::runOp() {
 			return STZ(X);
 			break;
 
+	case 0x90:
+		return BCC();
+
 	case 0x9a:
 		SP = X;
 		PC += 1;
@@ -826,6 +946,9 @@ uint8_t NES_CPU::runOp() {
 			return LDZ(&A);
 			break;
 
+	case 0xb0:
+		return BCS();
+
 	case 0xc0:
 		case 0xc4:
 		case 0xcc:
@@ -844,12 +967,16 @@ uint8_t NES_CPU::runOp() {
 			return CMP(&A);
 			break;
 
+	case 0xca:
+		return DEZ(&X);
+		break;
+
 	case 0xce:
 		return DEZ(&memory[combineLowHigh(memory[PC+1], memory[PC+2])]);
 		break;
 
 	case 0xd0:
-		return BENQ(false);
+		return BNE();
 
 	case 0xd8:
 		setDecimalMode(0);
@@ -877,8 +1004,7 @@ uint8_t NES_CPU::runOp() {
 			return SBC();
 
 	case 0xf0:
-		return BENQ(true);
-		break;
+		return BEQ();
 
 	case 0xf6:
 		return INZ(&memory[(uint8_t) (memory[PC+1] + X)]);
@@ -901,6 +1027,26 @@ uint8_t NES_CPU::runOp() {
 	}
 }
 
+uint8_t NES_CPU::branchIfFlagSet(bool flag, bool isSet) {
+	bool branching = flag == isSet;
+	if(branching) {
+		branchRelative();
+		PC += 2;
+		return 3; //TODO: +2 if new page
+	} else {
+		PC += 2;
+		return 2;
+	}
+}
+
+inline uint8_t NES_CPU::BCS() {return branchIfFlagSet(isSetCarryFlag(), true); }
+inline uint8_t NES_CPU::BCC() {return branchIfFlagSet(isSetCarryFlag(), false); }
+inline uint8_t NES_CPU::BEQ() {return branchIfFlagSet(isSetZeroFlag(), true); }
+inline uint8_t NES_CPU::BNE() {return branchIfFlagSet(isSetZeroFlag(), false); }
+inline uint8_t NES_CPU::BMI() {return branchIfFlagSet(isSetNegative(), false); }
+inline uint8_t NES_CPU::BPL() {return branchIfFlagSet(isSetNegative(), true); }
+inline uint8_t NES_CPU::BVC() {return branchIfFlagSet(isSetOverflow(), false); }
+inline uint8_t NES_CPU::BVS() {return branchIfFlagSet(isSetOverflow(), true); }
 
 
 inline void NES_CPU::setCarryFlag(bool value) { setBit(&P, 0, value); }
@@ -924,6 +1070,7 @@ inline uint8_t NES_CPU::getZeroPageValue() {return memory[memory[PC+1]]; }
 inline uint8_t NES_CPU::getZeroPageXValue() {return memory[memory[PC+1]+X]; }
 inline uint8_t NES_CPU::getZeroPageYValue() {return memory[memory[PC+1]+Y]; }
 inline uint8_t NES_CPU::getAbsoluteValue() {return memory[combineLowHigh(memory[PC+1], memory[PC+2])]; }
+inline uint16_t NES_CPU::getAbsoluteAddress() {return combineLowHigh(memory[PC+1], memory[PC+2]); }
 inline uint8_t NES_CPU::getAbsoluteXValue() {return memory[combineLowHigh(memory[PC+1], memory[PC+2])+X]; }
 inline uint8_t NES_CPU::getAbsoluteYValue() {return memory[combineLowHigh(memory[PC+1], memory[PC+2])+Y]; }
 inline uint8_t NES_CPU::getIndirectValue() {
@@ -939,7 +1086,13 @@ inline uint8_t NES_CPU::getIndirectYValue() {
 	return memory[combineLowHigh(memory[addr], memory[addr+1])];
 }
 
-
+inline void NES_CPU::branchRelative() {
+	uint8_t offset = memory[PC+1];
+	if(isBitSet(offset, 7)) {
+		offset = offset & 0b01111111;
+		PC -= offset;
+	} else PC += offset;
+}
 
 void NES_CPU::d_printMemFromPC() {
 	printf("Dumping the first KB of Memory located at PC: \n");
