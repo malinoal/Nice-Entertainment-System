@@ -101,6 +101,90 @@ inline void NES_CPU::pushToStack(uint8_t value) { memory[--SP] = value; }
 inline uint8_t NES_CPU::pullFromStack() { return memory[SP++]; }
 
 
+uint8_t NES_CPU::ADC() {
+	/*
+	 * Add with Carry
+	 * A += target + Carry
+	 * Sets Carry Flag if Overflow occurs
+	 * Sets Overflow Flag if Overflow occurs
+	 * Sets Zero Flag if A==0
+	 * Sets Negative if bit 7 of A is set
+	 */
+
+	uint8_t bytes = 0;
+	uint8_t cycles = 0;
+	uint8_t target = 0;
+
+	switch(memory[PC]) {
+
+	case 0x69:
+		bytes = 2;
+		cycles = 2;
+		target = getImmediateValue();
+		break;
+
+	case 0x65:
+		bytes = 2;
+		cycles = 3;
+		target = getZeroPageValue();
+		break;
+
+	case 0x75:
+		bytes = 2;
+		cycles = 4;
+		target = getZeroPageXValue();
+		break;
+
+	case 0x6d:
+		bytes = 3;
+		cycles = 4;
+		target = getAbsoluteValue();
+		break;
+
+	case 0x7d:
+		bytes = 3;
+		cycles = 4; //TODO: +1 if page crossed
+		target = getAbsoluteXValue();
+		break;
+
+	case 0x79:
+		bytes = 3;
+		cycles = 4; //TODO: +1 if page crossed
+		target = getAbsoluteYValue();
+		break;
+
+	case 0x61:
+		bytes = 2;
+		cycles = 6;
+		target = getIndirectXValue();
+		break;
+
+	case 0x71:
+		bytes = 2;
+		cycles = 5; //TODO: +1 if page crossed
+		target = getIndirectYValue();
+		break;
+
+	default:
+		printf("ADC code %02x not implemented yet\n", memory[PC]);
+		return 0;
+	}
+
+	bool bit7before = isBitSet(A,7);
+
+	A += target;
+	if(isSetCarryFlag()) A++;
+
+	bool overflow = bit7before != isBitSet(A,7);
+
+	setCarryFlag(overflow);
+	setOverflow(overflow);
+	setZeroFlag(A==0);
+	setNegative(isBitSet(A,7));
+
+	PC += bytes;
+	return cycles;
+}
 
 uint8_t NES_CPU::AND() { //performs & on A, setting Zero and Negative when Appropriate
 	uint8_t bytes = 0;
@@ -406,6 +490,75 @@ uint8_t NES_CPU::DEZ(uint8_t* Z) { //Decrements Z, setting Zero and Negative whe
 	return cycles;
 }
 
+uint8_t NES_CPU::EOR() { //performs bitwise XOR on A, setting Zero and Negative as appropriate
+	uint8_t bytes = 0;
+	uint8_t cycles = 0;
+	uint8_t target = 0;
+
+	switch(memory[PC]) {
+
+	case 0x49:
+		bytes = 2;
+		cycles = 2;
+		target = getImmediateValue();
+		break;
+
+	case 0x45:
+		bytes = 2;
+		cycles = 3;
+		target = getZeroPageValue();
+		break;
+
+	case 0x55:
+		bytes = 2;
+		cycles = 4;
+		target = getZeroPageXValue();
+		break;
+
+	case 0x4d:
+		bytes = 3;
+		cycles = 4;
+		target = getAbsoluteValue();
+		break;
+
+	case 0x5d:
+		bytes = 3;
+		cycles = 4; //TODO: +1 if page crossed
+		target = getAbsoluteXValue();
+		break;
+
+	case 0x59:
+		bytes = 3;
+		cycles = 4; //TODO: +1 if page crossed
+		target = getAbsoluteYValue();
+		break;
+
+	case 0x41:
+		bytes = 2;
+		cycles = 6;
+		target = getIndirectXValue();
+		break;
+
+	case 0x51:
+		bytes = 2;
+		cycles = 5; //TODO: +1 if page crossed
+		target = getIndirectYValue();
+		break;
+
+	default:
+		printf("EOR code %02x not implemented yet\n", memory[PC]);
+	}
+
+	A ^= target;
+
+	setZeroFlag(A==0);
+	setNegative(isBitSet(A, 7));
+
+	PC+=bytes;
+	return cycles;
+
+}
+
 uint8_t NES_CPU::INZ(uint8_t* Z) { //Increments X, Y or a location in memory, setting Zero and Negative when appropriate
 	uint8_t bytes = 0;
 	uint8_t cycles = 0;
@@ -442,6 +595,75 @@ uint8_t NES_CPU::JSR() { //Jump to Subroutine, takes 3 bytes but only pushes PC+
 	PC = addr;
 
 	return 6;
+
+}
+
+uint8_t NES_CPU::ORA() { //performs bitwise OR on A, setting Zero and Negative as appropriate
+	uint8_t bytes = 0;
+	uint8_t cycles = 0;
+	uint8_t target = 0;
+
+	switch(memory[PC]) {
+
+	case 0x09:
+		bytes = 2;
+		cycles = 2;
+		target = getImmediateValue();
+		break;
+
+	case 0x05:
+		bytes = 2;
+		cycles = 3;
+		target = getZeroPageValue();
+		break;
+
+	case 0x15:
+		bytes = 2;
+		cycles = 4;
+		target = getZeroPageXValue();
+		break;
+
+	case 0x0d:
+		bytes = 3;
+		cycles = 4;
+		target = getAbsoluteValue();
+		break;
+
+	case 0x1d:
+		bytes = 3;
+		cycles = 4; //TODO: +1 if page crossed
+		target = getAbsoluteXValue();
+		break;
+
+	case 0x19:
+		bytes = 3;
+		cycles = 4; //TODO: +1 if page crossed
+		target = getAbsoluteYValue();
+		break;
+
+	case 0x01:
+		bytes = 2;
+		cycles = 6;
+		target = getIndirectXValue();
+		break;
+
+	case 0x11:
+		bytes = 2;
+		cycles = 5; //TODO: +1 if page crossed
+		target = getIndirectYValue();
+		break;
+
+	default:
+		printf("ORA code %02x not implemented yet\n", memory[PC]);
+	}
+
+	A |= target;
+
+	setZeroFlag(A==0);
+	setNegative(isBitSet(A, 7));
+
+	PC+=bytes;
+	return cycles;
 
 }
 
@@ -782,6 +1004,16 @@ uint8_t NES_CPU::runOp() {
 		return 3;
 		break;
 
+	case 0x09:
+		case 0x05:
+		case 0x15:
+		case 0x0d:
+		case 0x1d:
+		case 0x19:
+		case 0x01:
+		case 0x11:
+			return ORA();
+
 	case 0x0a:
 		case 0x06:
 		case 0x16:
@@ -867,6 +1099,16 @@ uint8_t NES_CPU::runOp() {
 		PC++;
 		return 3; //PHA, push A
 
+	case 0x49:
+		case 0x45:
+		case 0x55:
+		case 0x4d:
+		case 0x5d:
+		case 0x59:
+		case 0x41:
+		case 0x51:
+			return EOR();
+
 	case 0x4a:
 		case 0x46:
 		case 0x56:
@@ -887,6 +1129,16 @@ uint8_t NES_CPU::runOp() {
 
 	case 0x68:
 		return PLA();
+
+	case 0x69:
+		case 0x65:
+		case 0x75:
+		case 0x6d:
+		case 0x7d:
+		case 0x79:
+		case 0x61:
+		case 0x71:
+			return ADC();
 
 	case 0x70:
 		return BVS();
@@ -948,6 +1200,11 @@ uint8_t NES_CPU::runOp() {
 
 	case 0xb0:
 		return BCS();
+
+	case 0xb8:
+		setOverflow(false);
+		PC++;
+		return 2;
 
 	case 0xc0:
 		case 0xc4:

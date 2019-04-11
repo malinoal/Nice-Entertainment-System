@@ -29,6 +29,8 @@ public:
 
 	uint8_t runOp();
 
+	uint8_t ADC();
+
 	uint8_t AND();
 
 	uint8_t ASL();
@@ -49,6 +51,8 @@ public:
 
 	uint8_t DEZ(uint8_t* Z);
 
+	uint8_t EOR();
+
 	uint8_t INZ(uint8_t* Z);
 
 	uint8_t JMP();
@@ -58,6 +62,8 @@ public:
 	uint8_t LDZ(uint8_t* Z);
 
 	uint8_t LSR();
+
+	uint8_t ORA();
 
 	uint8_t PLA();
 
