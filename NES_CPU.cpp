@@ -467,6 +467,7 @@ uint8_t NES_CPU::DEZ(uint8_t* Z) { //Decrements Z, setting Zero and Negative whe
 	switch(memory[PC]) {
 
 	case 0xca:
+	case 0x88:
 		bytes = 1;
 		cycles = 2;
 		break;
@@ -566,6 +567,7 @@ uint8_t NES_CPU::INZ(uint8_t* Z) { //Increments X, Y or a location in memory, se
 	switch(memory[PC]) {
 
 	case 0xe8:
+	case 0xc8:
 		bytes = 1;
 		cycles = 2;
 		break;
@@ -573,6 +575,11 @@ uint8_t NES_CPU::INZ(uint8_t* Z) { //Increments X, Y or a location in memory, se
 	case 0xf6:
 		bytes = 2;
 		cycles = 6;
+		break;
+
+	case 0xfe:
+		bytes = 3;
+		cycles = 7;
 		break;
 
 	default:
@@ -985,6 +992,14 @@ uint8_t NES_CPU::STZ(uint8_t Z) { //Stores Z into memory
 
 }
 
+uint8_t NES_CPU::TZZ(uint8_t ZS, uint8_t* ZT) { //Transfers contents of ZS to ZT
+	*ZT = ZS;
+	setZeroFlag(*ZT == 0);
+	setNegative(isBitSet(*ZT,7));
+	PC++;
+	return 2;
+}
+
 
 uint8_t NES_CPU::runOp() {
 
@@ -1171,6 +1186,9 @@ uint8_t NES_CPU::runOp() {
 			return STZ(X);
 			break;
 
+	case 0x88:
+		return DEZ(&Y);
+
 	case 0x90:
 		return BCC();
 
@@ -1178,6 +1196,13 @@ uint8_t NES_CPU::runOp() {
 		SP = X;
 		PC += 1;
 		return 2;
+
+	case 0xa0:
+		case 0xa4:
+		case 0xb4:
+		case 0xac:
+		case 0xbc:
+			return LDZ(&Y);
 
 	case 0xa2:
 		case 0xa6:
@@ -1211,6 +1236,9 @@ uint8_t NES_CPU::runOp() {
 		case 0xcc:
 			return CMP(&Y);
 			break;
+
+	case 0xc8:
+		return INZ(&Y);
 
 
 	case 0xc9:
@@ -1272,6 +1300,24 @@ uint8_t NES_CPU::runOp() {
 		PC++;
 		return 2;
 		break;
+
+	case 0xfe:
+		return INZ(getAbsoluteXAddress());
+
+	case 0xaa:
+		return TZZ(A, &X);
+
+	case 0xa8:
+		return TZZ(A, &Y);
+
+	case 0xba:
+		return TZZ(SP, &X);
+
+	case 0x8a:
+		return TZZ(X, &A);
+
+	case 0x98:
+		return TZZ(Y, &A);
 
 
 
@@ -1341,6 +1387,25 @@ inline uint8_t NES_CPU::getIndirectXValue() {
 inline uint8_t NES_CPU::getIndirectYValue() {
 	uint8_t addr = memory[PC+1] + Y;
 	return memory[combineLowHigh(memory[addr], memory[addr+1])];
+}
+
+inline uint8_t* NES_CPU::getZeroPageAddress() {return &memory[memory[PC+1]]; }
+inline uint8_t* NES_CPU::getZeroPageXAddress() {return &memory[memory[PC+1]+X]; }
+inline uint8_t* NES_CPU::getZeroPageYAddress() {return &memory[memory[PC+1]+Y]; }
+inline uint8_t* NES_CPU::getAbsoluteAddressP() {return &memory[combineLowHigh(memory[PC+1], memory[PC+2])]; }
+inline uint8_t* NES_CPU::getAbsoluteXAddress() {return &memory[combineLowHigh(memory[PC+1], memory[PC+2])+X]; }
+inline uint8_t* NES_CPU::getAbsoluteYAddress() {return &memory[combineLowHigh(memory[PC+1], memory[PC+2])+Y]; }
+inline uint8_t* NES_CPU::getIndirectAddress() {
+	uint8_t addr = getAbsoluteValue();
+	return &memory[combineLowHigh(memory[addr], memory[addr+1])];
+}
+inline uint8_t* NES_CPU::getIndirectXAddress() {
+	uint8_t addr = memory[PC+1] + X;
+	return &memory[combineLowHigh(memory[addr], memory[addr+1])];
+}
+inline uint8_t* NES_CPU::getIndirectYAddress() {
+	uint8_t addr = memory[PC+1] + Y;
+	return &memory[combineLowHigh(memory[addr], memory[addr+1])];
 }
 
 inline void NES_CPU::branchRelative() {

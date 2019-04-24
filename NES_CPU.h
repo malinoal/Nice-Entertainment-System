@@ -73,6 +73,8 @@ public:
 
 	uint8_t STZ(uint8_t Z);
 
+	uint8_t TZZ(uint8_t ZS, uint8_t* ZT);
+
 	uint8_t branchIfFlagSet(bool flag, bool isSet);
 
 	inline uint8_t BCS();
@@ -112,6 +114,16 @@ public:
 	inline uint8_t getIndirectValue();
 	inline uint8_t getIndirectXValue();
 	inline uint8_t getIndirectYValue();
+
+	inline uint8_t* getZeroPageAddress();
+	inline uint8_t* getZeroPageXAddress();
+	inline uint8_t* getZeroPageYAddress();
+	inline uint8_t* getAbsoluteAddressP();
+	inline uint8_t* getAbsoluteXAddress();
+	inline uint8_t* getAbsoluteYAddress();
+	inline uint8_t* getIndirectAddress();
+	inline uint8_t* getIndirectXAddress();
+	inline uint8_t* getIndirectYAddress();
 
 	inline void branchRelative();
 
